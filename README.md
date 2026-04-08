@@ -13,10 +13,10 @@
 
 | Resource | Link |
 |----------|------|
-| 🌐 **Live Dashboard** | [Open on Streamlit Cloud](https://DUMMY_STREAMLIT_LINK) |
-| 📊 **Presentation (PPT)** | [View on Google Drive](https://DUMMY_GDRIVE_PPT_LINK) |
-| 📄 **Detailed Report (PDF)** | [View on Google Drive](https://DUMMY_GDRIVE_PDF_LINK) |
-| 💻 **GitHub Repository** | [RAK2315/knowledgequarry-2026](https://github.com/RAK2315/knowledgequarry-2026) |
+|  **Live Dashboard** | [Open on Streamlit Cloud](https://knowledgequarry.streamlit.app/) |
+|  **Presentation (PPT)** | [View on Google Drive](https://drive.google.com/file/d/1kOfjwFgUw0fKSkvrQ0k33mFbDpW0V-az/view?usp=sharing) |
+|  **Detailed Report (PDF)** | [View on Google Drive](https://drive.google.com/file/d/1UQQH7OpBnEgN2mhXJz-J7Ef6UyHJnqKt/view?usp=sharing) |
+|  **GitHub Repository** | [RAK2315/knowledgequarry-2026](https://github.com/RAK2315/knowledgequarry-2026) |
 
 ---
 
