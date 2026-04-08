@@ -1,6 +1,5 @@
 # Model checkpoints and logs (large files)
 models/
-logs/
 
 # Python
 __pycache__/
