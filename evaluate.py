@@ -3,15 +3,13 @@ import json
 import numpy as np
 import pandas as pd
 from sb3_contrib import MaskablePPO
-from sb3_contrib.common.wrappers import ActionMasker
 from environment import TaskAllocationEnv, AGENT_CONFIGS, NUM_TASKS
 
 MODEL_DIR = "models"
 LOG_DIR = "logs"
 NUM_EVAL_EPISODES = 20
+COMPARISON_SEED = 42
 os.makedirs(LOG_DIR, exist_ok=True)
-
-TOTAL_ENERGY = {i: AGENT_CONFIGS[i]["energy"] for i in range(len(AGENT_CONFIGS))}
 
 
 def describe_action(agent_idx, action, env, prev_energy, new_energy, task_completed):
@@ -41,13 +39,14 @@ def describe_action(agent_idx, action, env, prev_energy, new_energy, task_comple
         )
 
 
-def run_episode(model, env, deterministic=True):
-    obs, _ = env.reset()
+def run_episode(model, env, seed=None, deterministic=True):
+    obs, _ = env.reset(seed=seed)
     frames = []
     total_reward = 0.0
     done = False
     prev_energy = env.agent_energy.copy()
     prev_task_done = env.task_done.copy()
+    cumulative_reward = 0.0
 
     while not done:
         masks = env.action_masks()
@@ -56,6 +55,7 @@ def run_episode(model, env, deterministic=True):
 
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
+        cumulative_reward += reward
         done = terminated or truncated
 
         new_energy = env.agent_energy.copy()
@@ -83,6 +83,62 @@ def run_episode(model, env, deterministic=True):
             "task_difficulty": env.task_difficulty.tolist(),
             "tasks_completed": int(new_task_done.sum()),
             "reward": float(reward),
+            "cumulative_reward": float(cumulative_reward),
+            "action_logs": action_logs,
+            "step_summary": step_summary,
+            "actions": action.tolist(),
+        }
+        frames.append(frame)
+        prev_energy = new_energy.copy()
+        prev_task_done = new_task_done.copy()
+
+    summary = env.get_episode_summary()
+    summary["total_reward"] = total_reward
+    return frames, summary
+
+
+def run_random_episode(env, seed=None):
+    obs, _ = env.reset(seed=seed)
+    frames = []
+    total_reward = 0.0
+    done = False
+    prev_energy = env.agent_energy.copy()
+    prev_task_done = env.task_done.copy()
+    cumulative_reward = 0.0
+
+    while not done:
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
+        total_reward += reward
+        cumulative_reward += reward
+        done = terminated or truncated
+
+        new_energy = env.agent_energy.copy()
+        new_task_done = env.task_done.copy()
+        newly_completed = np.where((new_task_done - prev_task_done) > 0)[0]
+
+        action_logs = []
+        for i, a in enumerate(action):
+            task_completed = a in newly_completed
+            log = describe_action(i, a, env, prev_energy[i], new_energy[i], task_completed)
+            action_logs.append(log)
+
+        step_summary = f"Step {env._step}: {int(new_task_done.sum())}/10 tasks done"
+        if len(newly_completed) > 0:
+            step_summary += f" — {len(newly_completed)} task(s) completed this step ✅"
+        else:
+            step_summary += " — agents moving randomly"
+
+        frame = {
+            "step": env._step,
+            "agent_positions": env.agent_positions.tolist(),
+            "agent_energy": new_energy.tolist(),
+            "task_positions": env.task_positions.tolist(),
+            "task_done": new_task_done.tolist(),
+            "task_difficulty": env.task_difficulty.tolist(),
+            "tasks_completed": int(new_task_done.sum()),
+            "reward": float(reward),
+            "cumulative_reward": float(cumulative_reward),
             "action_logs": action_logs,
             "step_summary": step_summary,
             "actions": action.tolist(),
@@ -105,15 +161,15 @@ def evaluate_model(model_path, label, num_episodes=NUM_EVAL_EPISODES):
     env = TaskAllocationEnv()
     all_summaries = []
     best_frames = None
-    best_tasks = -1
+    best_reward = -999999
 
     for ep in range(num_episodes):
         frames, summary = run_episode(model, env)
         summary["episode"] = ep + 1
         summary["model"] = label
         all_summaries.append(summary)
-        if summary["tasks_completed"] > best_tasks:
-            best_tasks = summary["tasks_completed"]
+        if summary["total_reward"] > best_reward:
+            best_reward = summary["total_reward"]
             best_frames = frames
 
     print(f"[{label}] Avg tasks: {np.mean([s['tasks_completed'] for s in all_summaries]):.2f} / {NUM_TASKS}")
@@ -126,21 +182,30 @@ def run_random_baseline(num_episodes=NUM_EVAL_EPISODES):
     env = TaskAllocationEnv()
     all_summaries = []
     for ep in range(num_episodes):
-        obs, _ = env.reset()
-        done = False
-        total_reward = 0.0
-        while not done:
-            action = env.action_space.sample()
-            obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += reward
-            done = terminated or truncated
-        summary = env.get_episode_summary()
-        summary["total_reward"] = total_reward
+        frames, summary = run_random_episode(env)
         summary["episode"] = ep + 1
         summary["model"] = "random"
         all_summaries.append(summary)
     print(f"[RANDOM] Avg tasks: {np.mean([s['tasks_completed'] for s in all_summaries]):.2f} / {NUM_TASKS}")
     return all_summaries
+
+
+def generate_comparison_episode(model):
+    env = TaskAllocationEnv()
+    print(f"\n=== Generating same-seed comparison (seed={COMPARISON_SEED}) ===")
+
+    trained_frames, trained_summary = run_episode(model, env, seed=COMPARISON_SEED)
+    print(f"[TRAINED] reward: {trained_summary['total_reward']:.2f} | steps: {trained_summary['total_steps']}")
+
+    random_frames, random_summary = run_random_episode(env, seed=COMPARISON_SEED)
+    print(f"[RANDOM]  reward: {random_summary['total_reward']:.2f} | steps: {random_summary['total_steps']}")
+
+    return {
+        "trained": trained_frames,
+        "random": random_frames,
+        "trained_summary": trained_summary,
+        "random_summary": random_summary,
+    }
 
 
 def main():
@@ -158,12 +223,15 @@ def main():
     random_summaries = run_random_baseline()
     all_summaries.extend(random_summaries)
 
+    final_model = None
     for label, path in checkpoints.items():
         print(f"\n=== Evaluating: {label} ===")
         summaries, best_frames = evaluate_model(path, label)
         if summaries:
             all_summaries.extend(summaries)
             replay_data[label] = best_frames
+            if label == "final":
+                final_model = MaskablePPO.load(path)
 
     df = pd.DataFrame(all_summaries)
     df.to_csv(os.path.join(LOG_DIR, "eval_metrics.csv"), index=False)
@@ -172,6 +240,12 @@ def main():
     with open(os.path.join(LOG_DIR, "replay_data.json"), "w") as f:
         json.dump(replay_data, f)
     print(f"[SAVED] replay_data.json — {len(replay_data)} model replays")
+
+    if final_model is not None:
+        comparison = generate_comparison_episode(final_model)
+        with open(os.path.join(LOG_DIR, "comparison_data.json"), "w") as f:
+            json.dump(comparison, f)
+        print(f"[SAVED] comparison_data.json — same-seed trained vs random")
 
     print("\n=== Learning Summary ===")
     for label in ["random", "early_30k", "mid_100k", "late_200k", "final"]:
