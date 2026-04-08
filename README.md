@@ -1,75 +1,128 @@
-# Adaptive Multi-Agent Task Allocation
+# Adaptive Multi-Agent Task Allocation via Reinforcement Learning
 ### KnowledgeQuarry 2026 · Convoke 8.0 · CIC University of Delhi · ML Engineering Track
 
 ---
 
 ## What This Is
 
-A Reinforcement Learning system where 5 agents **learn** to complete 10 tasks on a grid as efficiently as possible — purely through trial and error, no hardcoded rules.
+A Reinforcement Learning system where 5 agents **learn** to complete 10 tasks on a grid as efficiently as possible — purely through trial and error across 95,000+ episodes. No rules. No hardcoding. The policy discovers everything from reward signals alone.
 
-Think of it as a warehouse with 5 workers and 10 jobs. Workers have different strengths:
-- **Type A (2 agents)** — Strong but slow. High capacity means cheaper energy cost per task. Best for hard tasks.
-- **Type B (3 agents)** — Fast but weak. Low capacity means higher energy cost per task. Best for nearby easy tasks.
+**The scenario:** Think of a warehouse with 5 workers and 10 jobs scattered across a floor. Workers have different strengths:
+- **■ Type A agents (2)** — Strong but slow. High capacity means cheaper energy cost per task. Best for hard tasks.
+- **● Type B agents (3)** — Fast but weak. Low capacity means higher energy cost per task. Best for nearby easy tasks.
 
-The RL model (MaskablePPO) learns *which agent should go to which task, in what order* — trained over **300,000 timesteps / 95,000+ episodes**.
-
----
-
-## Problem Statement
-
-**Problem 02 — Adaptive Systems: Learning Under Constraints**
-
-- Environment: 10 tasks scattered on a 10×10 grid, each with a difficulty rating (1–3)
-- Agents: 5 agents with different speed, capacity, and energy limits
-- Objective: Maximize tasks completed while minimizing energy waste
-- Constraint: Agents run out of energy — they can't do everything
-
-**What the model learns:**
-> Random policy completes tasks but wastes energy and overlaps assignments.
-> Trained policy splits tasks intelligently — Type A handles hard tasks, Type B covers nearby easy ones.
-> Result: **+20% reward improvement** over random baseline across 20 evaluation episodes.
+The model learns *which agent should go to which task, in what order* — and the correct assignment strategy emerges entirely from experience.
 
 ---
 
-## How Energy & Capacity Work
+## The Learning Story
 
-| Agent | Type | Speed | Capacity | Energy |
-|-------|------|-------|----------|--------|
-| Agent 0 | A | 1 | 3 | 100 |
-| Agent 1 | A | 1 | 3 | 100 |
-| Agent 2 | B | 2 | 1 | 60 |
-| Agent 3 | B | 2 | 1 | 60 |
-| Agent 4 | B | 2 | 1 | 60 |
+| Policy | Avg Reward | vs Random |
+|--------|-----------|-----------|
+| Random (no learning) | 21.92 | baseline |
+| Early — 30k steps | 26.26 | +19.8% |
+| Mid — 100k steps | 26.37 | +20.3% |
+| Final — 300k steps | 26.40 | +20.4% |
 
-- **Move cost** = `distance / speed`
-- **Task cost** = `difficulty / capacity`
-- Type A at difficulty-3 task: `3/3 = 1` energy — very efficient
-- Type B at difficulty-3 task: `3/1 = 3` energy — 3× more expensive
+All policies complete 100% of tasks. The learning signal is **reward efficiency** — the trained policy completes tasks in 3 steps consistently, wastes less energy, and never overlaps agent assignments. The random policy takes up to 80 steps, doubles up on tasks, and drains energy on long unnecessary moves.
 
-This asymmetry is what the RL model learns to exploit.
+---
+
+## Dashboard
+
+### 🎬 Episode Replay — Watch Agents Learn
+Animated grid with play/pause. Watch agents fan out and complete tasks in 3 steps. Step-by-step mode shows a colour-coded action log explaining exactly what each agent did and why.
+
+![Episode Replay](screenshots/1.png)
+
+*Animated view — agents moving to tasks, green = pending, dark = completed*
+
+![Step-by-Step with Narration](screenshots/2.png)
+
+*Step-by-step mode — narration box updates every step showing agent decisions*
+
+---
+
+### ⚔️ Trained vs Random — Same Grid, Different Brain
+Both policies run on **identical starting positions and identical tasks** (same random seed). The only difference is the decision-making. Slider controls both simultaneously.
+
+![Trained vs Random](screenshots/4.png)
+
+*Left = trained policy (organised, parallel). Right = random policy (chaotic, overlapping).*
+
+![Cumulative Reward Chart](screenshots/5.png)
+
+*Green line (trained) consistently above red dotted line (random) — every step above = a smarter decision.*
+
+---
+
+### 📈 Proof of Learning
+Bar charts, evaluation episode lines, and training curve across 95,000+ episodes.
+
+![Proof of Learning](screenshots/6.png)
+
+*Left: avg reward per policy with error bars. Right: reward across 20 eval episodes — trained is higher and more consistent.*
+
+![Training Curve](screenshots/7.png)
+
+*Rising reward trend + narrowing confidence band = policy converging from random exploration to stable strategy.*
+
+---
+
+### 🎛️ What-If Explorer — Stress Test the Policy
+Change agent count, energy limits, and task count. Run the trained model on configurations it was never trained on. Tests generalisation.
+
+![What-If Explorer](screenshots/8.png)
+
+*3 agents, 15 tasks — harder than training. Policy still allocates efficiently.*
+
+---
+
+## How Energy and Capacity Work
+
+| Agent | Type | Speed | Capacity | Energy | Best For |
+|-------|------|-------|----------|--------|----------|
+| Agent 0 | A | 1 | 3 | 100 | Hard tasks (energy cost ÷3) |
+| Agent 1 | A | 1 | 3 | 100 | Hard tasks (energy cost ÷3) |
+| Agent 2 | B | 2 | 1 | 60 | Nearby easy tasks |
+| Agent 3 | B | 2 | 1 | 60 | Nearby easy tasks |
+| Agent 4 | B | 2 | 1 | 60 | Nearby easy tasks |
+
+**Move cost** = `distance / speed` — Type B moves cheaper per unit distance  
+**Task cost** = `difficulty / capacity` — Type A completes cheaper per difficulty point  
+**Type A on difficulty-3 task:** `3/3 = 1` energy  
+**Type B on difficulty-3 task:** `3/1 = 3` energy — 3× more expensive
+
+The policy learned to exploit this asymmetry without being told about it.
+
+---
+
+## Why MaskablePPO?
+
+Standard PPO with `MultiDiscrete` action space (5 agents × 21 options) = ~4M combinations. During initial experiments, the model completely failed to converge — `explained_variance` stayed near 0 over 500,000 steps.
+
+**Two fixes applied:**
+
+1. **Action masking** — at each step, completed tasks and zero-energy agents are masked from the valid action set. The policy only ever sees actions that make sense. Cleaner gradient, dramatically faster convergence.
+
+2. **Dense reward shaping** — proximity bonus (+0.3 per step for closing distance to nearest task), time penalty (-0.02/step), early completion bonus (+5.0). Gives signal every step instead of only on completion.
+
+Result: convergence within 30,000 steps instead of failure at 500,000.
 
 ---
 
 ## Stack
 
-- `gymnasium` — custom RL environment
-- `stable-baselines3` + `sb3-contrib` — MaskablePPO (action masking prevents agents from targeting completed tasks)
-- `streamlit` — interactive dashboard
-- `plotly` — animated simulation + training curves
-- `pandas / numpy` — metrics logging
-
----
-
-## Results
-
-| Policy | Avg Reward | Avg Completion |
-|--------|-----------|----------------|
-| Random | 21.9 | 100% |
-| Early (30k steps) | 26.3 | 100% |
-| Mid (100k steps) | 26.4 | 100% |
-| Final (300k steps) | 26.4 | 100% |
-
-All policies complete 100% of tasks — the learning signal is **reward efficiency** (less energy wasted, fewer redundant moves). The trained policy achieves **+20% reward** over random.
+```
+gymnasium==0.29.1       # Custom RL environment
+stable-baselines3==2.3.0  # PPO backbone
+sb3-contrib==2.3.0      # MaskablePPO + ActionMasker
+torch>=2.0.0            # Neural network backend (CUDA)
+streamlit>=1.32.0       # Dashboard
+plotly>=5.18.0          # Animated visualisations
+pandas>=2.0.0           # Metrics logging
+numpy>=1.24.0           # State handling
+```
 
 ---
 
@@ -77,63 +130,51 @@ All policies complete 100% of tasks — the learning signal is **reward efficien
 
 ```
 knowledgequarry/
-├── environment.py      # Custom Gymnasium env — grid, agents, tasks, rewards
-├── train.py            # MaskablePPO training loop with checkpointing
-├── evaluate.py         # Evaluation + replay data generation for dashboard
-├── dashboard.py        # Streamlit dashboard — simulation, curves, comparison, what-if
-├── models/             # Saved PPO checkpoints (auto-created on train)
-├── logs/               # Training metrics CSV + replay JSON (auto-created on train)
+├── environment.py      # Custom Gymnasium env — grid, agents, tasks, rewards, action masking
+├── train.py            # MaskablePPO training loop — checkpoints every 30k/100k/200k/300k steps
+├── evaluate.py         # Evaluation — generates replay_data.json + comparison_data.json
+├── dashboard.py        # Streamlit dashboard — 4 pages
+├── models/             # PPO checkpoints (auto-created on train)
+├── logs/               # Training CSV + replay JSON (auto-created on train)
+├── screenshots/        # Dashboard screenshots for this README
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Setup & Run
+## Setup and Run
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 pip install -r requirements.txt
 
-# Train the model (~90 mins on GPU, ~3hrs CPU)
+# 2. Train (~90 mins on GPU, ~3hrs CPU)
 python train.py
 
-# Evaluate and generate dashboard data
+# 3. Generate evaluation data and replay files
 python evaluate.py
 
-# Launch dashboard
+# 4. Launch dashboard
 streamlit run dashboard.py
 ```
 
----
-
-## Dashboard Tabs
-
-| Tab | What it shows |
-|-----|--------------|
-| 🎬 Episode Replay | Animated grid — watch agents move and complete tasks. Step-by-step action log explains every decision. |
-| 📈 Training Curves | Reward per episode, reward per step, energy used, policy stability over 95k+ episodes |
-| 🏆 Model Comparison | Random vs early vs mid vs final policy — reward progression across 20 eval episodes |
-| 🎛️ What-If Explorer | Change agent count, energy limits, task count — run trained model live on new scenarios |
+Models and logs are gitignored (large binary files). Run steps 2-3 to regenerate them.
 
 ---
 
-## Key Technical Decisions
+## Key Results Summary
 
-**Why MaskablePPO over vanilla PPO?**
-Standard PPO with `MultiDiscrete` action space of 5 agents × 21 options = 4M+ combinations. The model was wasting gradient on invalid actions (targeting already-completed tasks). Action masking eliminates invalid actions at inference time — massive improvement in convergence.
-
-**Why dense reward shaping?**
-Sparse reward (only +1 on task completion) means agents wander for many steps with zero signal. Added proximity bonus (+0.3 per step for moving closer to nearest task), time penalty (-0.02/step), and early completion bonus (+5.0) to give the policy constant gradient signal.
-
-**Why 10 tasks instead of 20?**
-5 agents solving 20 tasks is too large for PPO to crack in 300k steps without curriculum learning. 10 tasks allows the policy to converge fully and demonstrate clear learned behaviour within the competition timeframe.
+- **300,000 timesteps** trained across **95,030 episodes**
+- **+20.4% reward improvement** over random baseline
+- **3 steps** average to complete all 10 tasks (vs 80 step limit)
+- **100% task completion rate** across all evaluation episodes
+- **Explained variance = 1.0** — value network fully converged
+- **4 policy checkpoints** saved for before/after comparison
 
 ---
 
-## Team
+## Submitted by
 
-**Rehaan Ahmad Khan** — B.Tech CS (AI & ML), JSS University Noida
-- GitHub: [RAK2315](https://github.com/RAK2315)
-- Email: rehaanahmadkhan178@gmail.com
-- LinkedIn: [linkedin.com/in/rehaanak](https://linkedin.com/in/rehaanak)
+B.Tech CSE (AI & ML) · JSS University, Noida  
+Team Sigmoid
